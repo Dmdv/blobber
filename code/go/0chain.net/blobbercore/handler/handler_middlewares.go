@@ -1,11 +1,10 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/0chain/blobber/code/go/0chain.net/core/logging"
 	"github.com/gorilla/handlers"
 	"go.uber.org/zap"
+	"net/http"
 )
 
 func useCORS() func(http.Handler) http.Handler {

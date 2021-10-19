@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/0chain/blobber/code/go/0chain.net/blobbercore/allocation"
 	"net/http"
 	"os"
 	"runtime/pprof"
@@ -55,7 +56,7 @@ func SetupHandlers(r *mux.Router) {
 
 	//object info related apis
 	r.HandleFunc("/allocation", common.ToJSONResponse(WithConnection(AllocationHandler)))
-	r.HandleFunc("/v1/file/meta/{allocation}", common.ToJSONResponse(WithReadOnlyConnection(FileMetaHandler)))
+	r.HandleFunc("/v1/file/meta/{allocation}", common.ToJSONResponse(WithVerifiedSignature(WithReadOnlyConnection(FileMetaHandler))))
 	r.HandleFunc("/v1/file/stats/{allocation}", common.ToJSONResponse(WithReadOnlyConnection(FileStatsHandler)))
 	r.HandleFunc("/v1/file/list/{allocation}", common.ToJSONResponse(WithReadOnlyConnection(ListHandler)))
 	r.HandleFunc("/v1/file/objectpath/{allocation}", common.ToJSONResponse(WithReadOnlyConnection(ObjectPathHandler)))
@@ -72,6 +73,29 @@ func SetupHandlers(r *mux.Router) {
 
 	//marketplace related
 	r.HandleFunc("/v1/marketplace/shareinfo/{allocation}", common.ToJSONResponse(WithConnection(MarketPlaceShareInfoHandler)))
+}
+
+func WithVerifiedSignature(handler common.JSONResponderF) common.JSONResponderF {
+	return func(ctx context.Context, r *http.Request) (interface{}, error) {
+		var vars = mux.Vars(r)
+
+		allocationString := vars["allocation"]
+		allocationObj, err := allocation.VerifyAllocationTransaction(ctx, allocationString, true)
+		if err != nil {
+			return nil, common.NewErrorf("verify_allocation", "verifying allocation transaction error: %v", err)
+		}
+
+		if allocationObj.Expiration < common.Now() {
+			return nil, common.NewError("verify_allocation", "use of expired allocation")
+		}
+
+		valid, err := verifySignatureFromRequest(allocationString, r.Header.Get(common.ClientSignatureHeader), allocationObj.OwnerPublicKey)
+		if !valid || err != nil {
+			return nil, common.NewError("invalid_signature", "Invalid signature")
+		}
+
+		return handler(ctx, r)
+	}
 }
 
 func WithReadOnlyConnection(handler common.JSONResponderF) common.JSONResponderF {
